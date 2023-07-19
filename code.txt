@@ -1,0 +1,260 @@
+Function GetTextInParentheses(cell As Range) As String
+' Get value between parentheses: Thatcham (THM)
+' Return a string THM
+   Dim Value As String
+   Dim startParentheses As Long
+   Dim endParentheses As Long
+   
+   Value = cell.Value
+   ' from rear to front to search ")"
+   endParentheses = InStrRev(Value, ")")
+   If endParentheses > 0 Then
+       startParentheses = InStrRev(Value, "(", endParentheses)
+       If startParentheses > 0 Then
+           GetTextInParentheses = Mid(Value, startParentheses + 1, endParentheses - startParentheses - 1) ' get values between parentheses
+       End If
+   End If
+End Function
+Function GetCrashSpeed(cellvalue As String, cell As Range) As String
+   GetCrashSpeed = cellvalue & "K" & GetTextInParentheses(cell)
+End Function
+Function GetDriveType(cellvalue As String) As String
+   Select Case cellvalue
+       Case "Left (L)", "Left"
+           GetDriveType = "LHD"
+       Case "Right (R)", "Right"
+           GetDriveType = "RHD"
+       Case Else
+           GetDriveType = cellvalue
+   End Select
+End Function
+Function GetImpactSide(cellvalue As String) As String
+   Select Case cellvalue
+       Case "Left (L)", "Left"
+           GetImpactSide = "Left"
+       Case "Right (R)", "Right"
+           GetImpactSide = "Right"
+       Case Else
+           GetImpactSide = cellvalue
+   End Select
+End Function
+Function GetTestPhase(cellvalue As String) As String
+   Select Case cellvalue
+       Case "Calibration Test (C)"
+           GetTestPhase = "Cal"
+       Case "Validation Test (V)"
+           GetTestPhase = "Val"
+       Case Else
+           GetTestPhase = cellvalue
+   End Select
+End Function
+Function GetInstrumentationNumber(cellvalue As String) As String
+   Select Case cellvalue
+       Case "0", "5", "9"
+           GetInstrumentationNumber = "Ref1"
+       Case "1", "6"
+           GetInstrumentationNumber = "Ref2"
+       Case "2", "8"
+           GetInstrumentationNumber = "Tap"
+       Case Else
+           GetInstrumentationNumber = cellvalue
+   End Select
+End Function
+Function processInformation(arrayrow, startRow, datarow, startcolumn, searchTerm As Variant) As Long
+   Dim ws As Worksheet
+   Dim cellvalue As String
+   Dim columnDict As Object, specialDict As Object
+   Dim i As Long
+
+   Set ws = Workbooks(currentFileName).Worksheets("File Information")
+   Set columnDict = CreateObject("Scripting.Dictionary")
+   Set specialDict = CreateObject("Scripting.Dictionary")
+   columnDict.Add "Crash speed", 0
+   columnDict.Add "Test reference", 1
+   columnDict.Add "Vehicle Code", 2
+   columnDict.Add "Left-Right Hand driven car", 3
+   columnDict.Add "Comments", 4
+   columnDict.Add "Impactor type", 6
+   columnDict.Add "Side of impact", 7
+   columnDict.Add "Y-Position", 9
+   columnDict.Add "Bumper temperature", 10
+   columnDict.Add "Test phase", 11
+   columnDict.Add "Name", 12
+   columnDict.Add "Instrumentation number", 13
+
+   specialDict.Add "Crash speed", Array("GetCrashSpeed", 2)
+   specialDict.Add "Left-Right Hand driven car", Array("GetDriveType", 1)
+   specialDict.Add "Side of impact", Array("GetImpactSide", 1)
+   specialDict.Add "Test phase", Array("GetTestPhase", 1)
+   specialDict.Add "Instrumentation number", Array("GetInstrumentationNumber", 1)
+
+   For i = startRow To startRow + datarow
+       cellvalue = Application.Trim(ws.Cells(i, startcolumn).Value)
+       If specialDict.Exists(searchTerm) Then
+            If specialDict(searchTerm)(1) = 2 Then
+                cellvalue = Application.Run(specialDict(searchTerm)(0), ws.Cells(i, startcolumn), ws.Cells(i, startcolumn + 15))
+            ElseIf specialDict(searchTerm)(1) = 1 Then
+                cellvalue = Application.Run(specialDict(searchTerm)(0), ws.Cells(i, startcolumn))
+            End If
+       End If
+       If columnDict.Exists(searchTerm) Then
+           baseInfo(arrayrow, columnDict(searchTerm)) = cellvalue
+       End If
+       arrayrow = arrayrow + 1
+   Next i
+   processInformation = arrayrow
+End Function
+Function extractDataArray(mpn As Variant, ckbstatus As Variant)
+' File infomation extract function is created by Drew Hu
+' Parameter: Multipreprocessing item name and ckbstatus
+Dim wbSource As Workbook
+Dim wsSource As Worksheet
+Dim defaultCell, lastNonEmptyCell, currentCell, endCell, searchTermCell As Range
+Dim startcolumn, startRow, k, Count, LastRow As Integer
+Dim searchTerms(), searchTerm As Variant
+Dim targetColumn, currentcolumn, currentrowindex As Integer
+
+'Workbooks(currentFileName).Activate Workbooks(currentFileName).
+'find startcell(default cell)
+'On Error Resume Next
+Set defaultCell = Workbooks(currentFileName).Worksheets("File Information").Range("B:B").Find(what:=mpn, LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext, MatchCase:= _
+        False, MatchByte:=False, SearchFormat:=False)
+'find last cell whcih has value
+If Not defaultCell Is Nothing Then
+   Set currentCell = defaultCell.Offset(2, 0)
+   datarow = 0
+   Do While Not IsEmpty(currentCell.Value)
+        Set lastNonEmptyCell = currentCell
+        Set currentCell = currentCell.Offset(1, 0)
+        datarow = datarow + 1
+    Loop
+End If
+'MsgBox (datarow)
+Set endCell = Workbooks(currentFileName).Worksheets("File Information").Cells(lastNonEmptyCell.Row, 48)
+'set the search range
+Set rangedefault = Workbooks(currentFileName).Worksheets("File Information").Range(defaultCell.Address & ":" & endCell.Address)
+
+notEmptyRow = 0
+For i = 0 To 13
+    If configCaption(i, 0) <> "" Then
+        notEmptyRow = notEmptyRow + 1
+    End If
+Next i
+
+ReDim Arrayinfo(0 To notEmptyRow - 1)
+j = 0
+For i = 0 To 13
+    If configCaption(i, 0) <> "" Then
+        Arrayinfo(j) = configCaption(i, 1)
+        j = j + 1
+    End If
+Next i
+
+
+
+ReDim baseInfo(0 To datarow, 0 To 13)
+Dim columnmapping As Object
+Set columnmapping = CreateObject("Scripting.Dictionary")
+columnmapping("Test Mode") = "Crash speed"
+columnmapping("Ref. Name") = "Test reference"
+columnmapping("Vehicle Code") = "Vehicle Code"
+columnmapping("Vehicle Build") = "Left-Right Hand driven car"
+columnmapping("Comments") = "Comments"
+columnmapping("Test Location") = "Comments"
+columnmapping("Impactor") = "Impactor type"
+columnmapping("Impacted Side") = "Side of impact"
+columnmapping("Velocity (kph)") = "Crash speed"
+columnmapping("Impact Point (mm)") = "Y-Position"
+columnmapping("Temp (oC)") = "Bumper temperature"
+columnmapping("Phase") = "Test phase"
+columnmapping("Veoneer File Name") = "Name"
+columnmapping("Loc.") = "Instrumentation number"
+
+For Each searchTerm In Arrayinfo ' change to cinfigcaption(i, 1)
+    If columnmapping.Exists(searchTerm) Then
+        Set searchTermCell = rangedefault.Find(what:=columnmapping(searchTerm), LookIn:=xlValues, LookAt:=xlPart, SearchOrder:=xlByColumns, SearchDirection:=xlNext, MatchCase:= _
+            False, MatchByte:=False, SearchFormat:=False)
+        If Not searchTermCell Is Nothing Then
+            startRow = searchTermCell.Row
+            startcolumn = searchTermCell.Column
+            arrayrow = 0
+            arrayrow = processInformation(arrayrow, startRow, datarow, startcolumn, columnmapping(searchTerm))
+        End If
+    End If
+Next searchTerm
+
+baseInfo(0, 0) = "Test Mode"
+baseInfo(0, 1) = "Test Ref"
+baseInfo(0, 2) = "Vehicle Code"
+baseInfo(0, 3) = "Vehicle Build"
+baseInfo(0, 4) = "Comments"
+baseInfo(0, 5) = "Test Location"
+baseInfo(0, 6) = "Impactor"
+baseInfo(0, 7) = "Impacted Side"
+baseInfo(0, 8) = "Velocity (kph)"
+baseInfo(0, 9) = "Impact Point (mm)"
+baseInfo(0, 10) = "Temp (oC)"
+baseInfo(0, 11) = "Phase"
+baseInfo(0, 12) = "Veoneer File Name"
+baseInfo(0, 13) = "Loc."
+
+j = 0
+For i = 0 To UBound(ckbstatus)
+    If ckbstatus(i) Then
+        j = j + 1
+    End If
+Next i
+ckbEnableCount = j - 1
+
+ReDim headInfo(0 To 0, 0 To ckbEnableCount)
+ReDim fileInfo(0 To datarow - 2, 0 To ckbEnableCount)
+currentrowindex = 0
+targetColumn = 0
+
+For i = 0 To UBound(ckbstatus)
+     For j = currentrowindex To UBound(configCaption, 1)
+        If configCaption(j, 0) <> "" Then
+            If ckbstatus(i) = True Then
+                For k = 0 To UBound(baseInfo, 1) - 2
+                    fileInfo(k, targetColumn) = baseInfo(k + 1, j)
+                Next k
+                targetColumn = targetColumn + 1
+            End If
+            currentrowindex = j + 1
+            Exit For
+        End If
+     Next j
+Next i
+
+End Function
+Function getTestReference() As Variant
+    Dim searchRange As Range
+    Dim testReferenceCell As Range
+    Dim testReference() As Variant
+    
+    Workbooks(currentFileName).Worksheets("File Information").Cells.MergeCells = False
+    Set nameCell = Workbooks(currentFileName).Worksheets("File Information").Range("G:G").Find(what:="Test Description", LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext, MatchCase:= _
+        False, MatchByte:=False, SearchFormat:=False)
+        
+    i = 0
+    Do While Not IsEmpty(nameCell.Offset(i + 1, 0))
+        ReDim Preserve testReference(i)
+        If nameCell.Offset(i + 1, 0).Value = "Front Crash (F)" Or nameCell.Offset(i + 1, 0).Value = "Front Crash" Or nameCell.Offset(i + 1, 0).Value = "Front crash" Then
+            testReference(i) = "Front"
+        
+        ElseIf nameCell.Offset(i + 1, 0).Value = "Side Crash (S)" Or nameCell.Offset(i + 1, 0).Value = "Side Crash" Then
+            testReference(i) = "Side"
+        
+        ElseIf nameCell.Offset(i + 1, 0).Value = "Rear Crash/Fuel Cutoff (B)" Or nameCell.Offset(i + 1, 0).Value = "Rear Crash / Fuel Cutoff" Then
+            testReference(i) = "Rear"
+            
+        ElseIf nameCell.Offset(i + 1, 0).Value = "Rollover Crash (R)" Or nameCell.Offset(i + 1, 0).Value = "Rollover Crash" Then
+            testReference(i) = "Rollover"
+            
+        End If
+        i = i + 1
+    Loop
+    
+    getTestReference = testReference
+    
+End Function
